@@ -779,11 +779,12 @@ fn line_edge(app: &mut PhotocraftApp, id: LayerId, caret: usize, end: bool) -> u
 }
 
 /// Caret one screen of lines away (Page Down) or up (Page Up), keeping the column like the
-/// arrows. The page is the count of the laid-out lines whose baselines sit between the canvas's
-/// top and bottom edge (at least one line of type), so a zoomed-out view pages farther. The
-/// screen edges go through the view transform and the layer's transform, so rotations, flips,
-/// pan and zoom all count the lines the user actually sees. Hostile or missing view state and
-/// empty layouts hold the caret.
+/// arrows. The page is the count of the laid-out lines whose cross-line position sits inside
+/// the canvas: between its top and bottom edges for horizontal type, between its left and
+/// right edges for vertical type's columns (at least one line of type), so a zoomed-out view
+/// pages farther. The screen edges go through the view transform and the layer's transform, so
+/// rotations, flips, pan and zoom all count the lines the user actually sees. Hostile or
+/// missing view state and empty layouts hold the caret.
 fn page_step(app: &mut PhotocraftApp, id: LayerId, ctx: &egui::Context, caret: usize, down: bool) -> usize {
     let Some((l, aff, text)) = layout(app, id) else { return caret };
     let Some(view) = app.session.active_index().and_then(|i| app.ui.views.get(i)).cloned() else { return caret };
@@ -801,18 +802,32 @@ fn page_step(app: &mut PhotocraftApp, id: LayerId, ctx: &egui::Context, caret: u
         rotation: view.rotation,
         aspect: app.ui.view.display_aspect(),
     };
-    let text_y = |p: Pos2| {
+    let text_cross = |p: Pos2| {
         let d = xf.to_doc(p);
-        to_text(&aff, d[0], d[1]).1
+        to_text(&aff, d[0], d[1])
     };
-    let (top, bottom) = (text_y(egui::pos2(rect.left(), rect.top())), text_y(egui::pos2(rect.left(), rect.bottom())));
-    let (lo, hi) = if top <= bottom { (top, bottom) } else { (bottom, top) };
-    let visible = l.lines.iter().filter(|ln| {
-        let y = l.to_text(0.0, ln.baseline).1;
-        y > lo && y < hi
-    });
-    // The count is a known-small bound (visible lines), so to<i32> can't overflow.
-    let n = visible.count().max(1) as i32;
+    // The cross-line coordinate in text space: the line's y for horizontal type, the column's
+    // centre x for vertical type (a line's `baseline` is its column centre there).
+    let cross = |t: (f32, f32)| if l.vertical { t.0 } else { t.1 };
+    // Horizontal type pages over the canvas's vertical span; vertical type's columns cross it
+    // horizontally, so its page is the columns between the canvas's left and right edges.
+    let (a, b) = if l.vertical {
+        (cross(text_cross(egui::pos2(rect.left(), rect.top()))), cross(text_cross(egui::pos2(rect.right(), rect.top()))))
+    } else {
+        (cross(text_cross(egui::pos2(rect.left(), rect.top()))), cross(text_cross(egui::pos2(rect.left(), rect.bottom()))))
+    };
+    let (lo, hi) = if a <= b { (a, b) } else { (b, a) };
+    // At least one line of type (a page can't stall). The count is a known-small bound (visible
+    // lines), so to<i32> can't overflow.
+    let n = l
+        .lines
+        .iter()
+        .filter(|ln| {
+            let t = cross(l.to_text(0.0, ln.baseline));
+            t > lo && t < hi
+        })
+        .count()
+        .max(1) as i32;
     let x = l.caret(byte_of(&text, caret)).0;
     photocraft_text::line_step(&l, &text, caret, x, if down { n } else { -n })
 }

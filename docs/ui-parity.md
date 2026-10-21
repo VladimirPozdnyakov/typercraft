@@ -231,7 +231,8 @@ Paragraph; the rest open as in-app floating windows.
 |---|---|---|
 | 2026-10-15 | minor | Shape Density and Feather row added as done (TOOL-214-12, #5846) |
 | 2026-10-13 | minor | Menu bar from the keyboard: Alt / F10 focus, Alt+letter, underlined mnemonics (#4988) |
-| 2026-10-21 | minor | Type caret paging: Page Up/Down step a page of visible lines (column kept, ⇧ extends, ⌘PageUp/Down passes to the menus); `type.navigate` gains `paragraphStart`/`paragraphEnd`; `text::line_step` takes a |dir| > 1 page step |
+| 2026-10-21 | minor | Type caret paging: Page Up/Down step a page of visible lines (column kept, ⇧ extends, ⌘PageUp/Down passes to the menus); `type.navigate` gains `paragraphStart`/`paragraphEnd`; `text::line_step` takes a `dir` magnitude above 1 as a page step |
+| 2026-10-21 | fix | Vertical type's Page Up/Down counted the wrong lines (the column count now comes from the columns between the canvas's left and right edges, in text space) |
 | 2026-10-13 | minor | Layers panel filter row: Kind is a real dropdown with Kind, Name and Mode filters, drivable by `ui.set {layerFilter}` (#5048); row added as partial |
 | 2026-10-13 | minor | Stale "missing tool" rows corrected against main: Color Replacement (`paint.colorReplacement`), Red Eye (`paint.redEye`) and Add/Delete Anchor Point (the P flyout cycle) are live toolbar tools, so only Art History Brush is missing; no percentage or estimate changed |
 | 2026-10-13 | minor | Smart object perspective (non-affine) corrected to done: #426 landed four-corner placements with PSD round trip; scorecard FILE-215-6 flipped |

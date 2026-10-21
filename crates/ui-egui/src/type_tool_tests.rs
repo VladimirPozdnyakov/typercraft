@@ -537,6 +537,49 @@ fn page_keys_step_by_the_visible_lines() {
     assert_eq!(caret(h.state()), before, "⌘PageDown is not the type tool's");
 }
 
+/// Vertical type pages over the columns the canvas spans horizontally: with the columns 300 pt
+/// apart the view fits exactly three of them, so one Page Down is three columns — not the one
+/// line the old baseline-only count collapsed to, and not the whole text either.
+#[test]
+fn vertical_page_columns_count_the_visible_columns() {
+    let mut app = new_app();
+    let text = "ab\ncd\nef\ngh\nij\nkl";
+    let id = LayerId(
+        app.run("type.create", json!({"text": text, "size": 40, "leading": 300, "x": 600, "y": 100, "orientation": "vertical"}))
+            .unwrap()["layer"]
+            .as_u64()
+            .unwrap(),
+    );
+    app.session.select_layer(id).unwrap();
+    app.ui.views[0].zoom = 1.0;
+    app.ui.views[0].center = [300.0, 450.0];
+    app.ui.text_edit = Some(crate::state::TextEdit { layer: id.0, caret: 0, anchor: 0, session: "s".into(), created: false, mask: false, dragging: false, resize: None, preedit: None });
+    let mut h = harness(1.0, app);
+    h.run_steps(4);
+    let caret = |a: &PhotocraftApp| a.ui.text_edit.as_ref().map_or(0, |e| e.caret);
+    assert_eq!(caret(h.state()), 0, "caret setup landed");
+    let (l, _, _) = super::layout(h.state_mut(), id).unwrap();
+    assert!(l.vertical, "the layer is vertical");
+    // The columns hang leftward from the origin at 300 pt steps: 600, 300, 0, −300, −600, −900.
+    // The view is centred on x = 300 at zoom 1 (no rotation), so a column is visible when its
+    // centre sits strictly inside the canvas's doc-x interval [300 − w, 300 + w]; the canvas
+    // half width `w` sits in [450, 600] for this window, so the −300 column is out either way
+    // (a centre on the edge is not inside), −600 and −900 never fit.
+    let w = h.state().last_canvas_rect.width() / 2.0;
+    let centres = [0usize, 1, 2, 3, 4, 5].map(|k| 600.0 - 300.0 * k as f32);
+    let k = centres.iter().filter(|c| (**c - 300.0).abs() < w).count();
+    assert_eq!(k, 3, "columns 600, 300 and 0 sit inside the view's doc-x span [300−w, 300+w]");
+    // Page Down: three columns later, at the start of column 3 ("gh") — exactly one screen of
+    // columns for vertical type.
+    h.key_press(egui::Key::PageDown);
+    h.run_steps(2);
+    assert_eq!(caret(h.state()), 9, "one page down = {k} visible columns, landing at \"gh\"");
+    // Page Up returns to the first column's top.
+    h.key_press(egui::Key::PageUp);
+    h.run_steps(2);
+    assert_eq!(caret(h.state()), 0, "back up the paged columns");
+}
+
 /// Vertical type (#199): clicks and drags land on the glyph under the pointer down the column,
 /// and the arrow keys follow the vertical flow (↓ next character, ← next column).
 #[test]

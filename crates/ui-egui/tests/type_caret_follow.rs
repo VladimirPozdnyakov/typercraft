@@ -14,23 +14,30 @@ use serde_json::{Value, json};
 type Harness = egui_kittest::Harness<'static, PhotocraftApp>;
 
 fn harness() -> Option<Harness> {
-    let built = std::panic::catch_unwind(|| {
-        egui_kittest::Harness::builder().with_size(egui::vec2(900.0, 640.0)).with_max_steps(64).wgpu().build_eframe(|cc| {
-            PhotocraftApp::setup_context(&cc.egui_ctx, Default::default());
-            let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), Default::default());
-            if let Some(rs) = cc.wgpu_render_state.as_ref() {
-                app.set_wgpu(rs.clone());
-            }
-            app
-        })
-    });
-    match built {
-        Ok(h) => Some(h),
-        Err(_) => {
-            eprintln!("skipping: no GPU adapter");
-            None
-        }
-    }
+    // The adapter probe is the only step that can fail for lack of a GPU; after it a panic is a
+    // real failure and must fail the test, not read as a skip.
+    let probed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        egui_kittest::wgpu::create_render_state(photocraft_ui_egui::gpu_canvas::wgpu_setup(), Default::default())
+    }))
+    .ok();
+    let Some(rs) = probed else {
+        eprintln!("skipping: no GPU adapter");
+        return None;
+    };
+    Some(
+        egui_kittest::Harness::builder()
+            .with_size(egui::vec2(900.0, 640.0))
+            .with_max_steps(64)
+            .renderer(egui_kittest::wgpu::WgpuTestRenderer::from_render_state(rs))
+            .build_eframe(|cc| {
+                PhotocraftApp::setup_context(&cc.egui_ctx, Default::default());
+                let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), Default::default());
+                if let Some(rs) = cc.wgpu_render_state.as_ref() {
+                    app.set_wgpu(rs.clone());
+                }
+                app
+            }),
+    )
 }
 
 fn control(h: &mut Harness, method: &str, params: Value) {

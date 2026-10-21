@@ -4337,9 +4337,9 @@ pub fn canvas_view(app: &mut PhotocraftApp, ui: &mut egui::Ui, idx: usize, rect:
     if primary {
         let follow = std::mem::take(&mut app.ui.type_caret_moved);
         if follow
-            && let Some(at) = crate::type_tool::caret_screen(app, &xf)
+            && let Some(caret) = crate::type_tool::caret_screen(app, &xf)
         {
-            let step = crate::type_tool::caret_follow_step(at, rect);
+            let step = crate::type_tool::caret_follow_step(caret, rect);
             if crate::canvas_autoscroll::scroll(&mut view, step, xf) {
                 ctx.request_repaint();
             }

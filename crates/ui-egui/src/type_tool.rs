@@ -778,26 +778,35 @@ fn line_edge(app: &mut PhotocraftApp, id: LayerId, caret: usize, end: bool) -> u
     photocraft_text::line_edge(&l, &text, caret, end)
 }
 
-/// Screen point of the caret of the active type edit session over the canvas transform `xf`, for
-/// caret following. `None` when nothing is being edited or the layer can't be laid out. The
-/// point is the mid of the caret's vertical stroke, on the empty-text fallback line as in
-/// [`draw_overlay`].
-pub(crate) fn caret_screen(app: &mut PhotocraftApp, xf: &ViewXform) -> Option<Pos2> {
+/// Screen rect of the caret's vertical stroke of the active type edit session over the canvas
+/// transform `xf`, for caret following. `None` when nothing is being edited or the layer can't
+/// be laid out. The stroke spans the caret's line, on the empty-text fallback line as in
+/// [`draw_overlay`]; one point wide (a hairline), so following works on its centre or edge as
+/// the caller pleases.
+pub(crate) fn caret_screen(app: &mut PhotocraftApp, xf: &ViewXform) -> Option<egui::Rect> {
     let ed = app.ui.text_edit.as_ref()?.clone();
     let (l, aff, text) = layout(app, LayerId(ed.layer))?;
     let (x, top, bot) = if l.lines.is_empty() { (0.0, -(12.0 * l.px_per_pt.max(1.0)), 3.0) } else { l.caret(byte_of(&text, ed.caret)) };
+    let scr_y = |v: f32| {
+        let (tx, ty) = l.to_text(x, v);
+        let p = aff.apply(Point::new(f64::from(tx), f64::from(ty)));
+        xf.to_screen(p.x as f32, p.y as f32).y
+    };
     let (tx, ty) = l.to_text(x, (top + bot) / 2.0);
-    let p = aff.apply(Point::new(f64::from(tx), f64::from(ty)));
-    Some(xf.to_screen(p.x as f32, p.y as f32))
+    let m = aff.apply(Point::new(f64::from(tx), f64::from(ty)));
+    let cx = xf.to_screen(m.x as f32, m.y as f32).x;
+    Some(egui::Rect::from_two_pos(egui::pos2(cx, scr_y(top)), egui::pos2(cx, scr_y(bot))))
 }
 
-/// Where to scroll this frame so a caret at screen point `caret` comes back into the canvas
-/// `rect`: only toward the caret, never back, at least 20 pt inside the edges. The mirroring
-/// scroll limits (an image that fits never scrolls, Overscroll views aren't pulled back) live in
-/// [`crate::canvas_autoscroll::scroll`], which takes this step.
-pub(crate) fn caret_follow_step(caret: Pos2, rect: egui::Rect) -> egui::Vec2 {
+/// Where to scroll this frame so a caret stroke at screen rect `caret` comes back into the
+/// canvas `rect`: only toward the caret, never back, with its whole stroke at least 20 pt
+/// inside the edges. A stroke taller than a margin box can't fully fit — a huge caret then
+/// follows by its centre, which puts the part that matters (the writing point) in view. The
+/// scroll limits (an image that fits never scrolls, Overscroll views aren't pulled back) live
+/// in [`crate::canvas_autoscroll::scroll`], which takes this step.
+pub(crate) fn caret_follow_step(caret: egui::Rect, rect: egui::Rect) -> egui::Vec2 {
     let margin = 20.0;
-    if !caret.x.is_finite() || !caret.y.is_finite() || !rect.is_finite() || rect.width() <= 0.0 || rect.height() <= 0.0 || 2.0 * margin >= rect.width().min(rect.height()) {
+    if !caret.is_finite() || !rect.is_finite() || rect.width() <= 0.0 || rect.height() <= 0.0 || 2.0 * margin >= rect.width().min(rect.height()) {
         return egui::Vec2::ZERO;
     }
     let past = |c: f32, lo: f32, hi: f32| {
@@ -809,7 +818,22 @@ pub(crate) fn caret_follow_step(caret: Pos2, rect: egui::Rect) -> egui::Vec2 {
             0.0
         }
     };
-    egui::vec2(past(caret.x, rect.left() + margin, rect.right() - margin), past(caret.y, rect.top() + margin, rect.bottom() - margin))
+    // Horizontally the stroke is a hairline: follow its centre as before.
+    let dx = past(caret.center().x, rect.left() + margin, rect.right() - margin);
+    let dy = if caret.height() <= rect.height() - 2.0 * margin {
+        // Bring the whole stroke in: whichever edge is out drives the step (at most one can be —
+        // the stroke fits the margin box).
+        if caret.bottom() > rect.bottom() - margin {
+            caret.bottom() - (rect.bottom() - margin)
+        } else if caret.top() < rect.top() + margin {
+            caret.top() - (rect.top() + margin)
+        } else {
+            0.0
+        }
+    } else {
+        past(caret.center().y, rect.top() + margin, rect.bottom() - margin)
+    };
+    egui::vec2(dx, dy)
 }
 
 /// Keyboard input while editing. Returns true when a type edit session is active (single-key

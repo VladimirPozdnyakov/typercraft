@@ -2342,30 +2342,44 @@ fn command_home_end_delete_cover_the_whole_text_and_line() {
 }
 
 /// [`super::caret_follow_step`] is a lesser version of [`crate::canvas_autoscroll::edge_step`]:
-/// a caret inside the margin-free perimeter doesn't move the camera, one past it points the
-/// step toward it, and hostile input moves nothing.
+/// a caret stroke inside the margin-free perimeter doesn't move the camera, one past it points
+/// the step toward it, and hostile input moves nothing.
 #[test]
 fn caret_follow_step_points_toward_the_caret_only_when_it_is_outside() {
     let rect = egui::Rect::from_min_size(egui::pos2(100.0, 50.0), egui::vec2(400.0, 300.0));
-    assert_eq!(super::caret_follow_step(egui::pos2(300.0, 200.0), rect), vec2(0.0, 0.0), "inside: no move");
+    // A normal caret stroke: a hairline centred on the point.
+    let stroke = |x: f32, y: f32| egui::Rect::from_center_size(egui::pos2(x, y), egui::vec2(1.0, 20.0));
+    assert_eq!(super::caret_follow_step(stroke(300.0, 200.0), rect), vec2(0.0, 0.0), "inside: no move");
     // Well inside the 20 pt margin nothing happens; deep inside but past the margin it starts.
-    assert_eq!(super::caret_follow_step(egui::pos2(121.0, 235.0), rect), vec2(0.0, 0.0), "the margin holds the caret");
-    assert_eq!(super::caret_follow_step(egui::pos2(119.5, 235.0), rect), vec2(-0.5, 0.0), "hair past the margin: a small step");
-    let left = super::caret_follow_step(egui::pos2(60.0, 235.0), rect);
+    assert_eq!(super::caret_follow_step(stroke(121.0, 235.0), rect), vec2(0.0, 0.0), "the margin holds the caret");
+    assert_eq!(super::caret_follow_step(stroke(119.5, 235.0), rect), vec2(-0.5, 0.0), "hair past the margin: a small step");
+    let left = super::caret_follow_step(stroke(60.0, 235.0), rect);
     assert_eq!(left, vec2(-60.0, 0.0), "past the left edge: toward the caret");
-    let right = super::caret_follow_step(egui::pos2(540.0, 235.0), rect);
+    let right = super::caret_follow_step(stroke(540.0, 235.0), rect);
     assert_eq!(right, vec2(60.0, 0.0), "past the right edge: toward the caret");
-    assert_eq!(super::caret_follow_step(egui::pos2(479.0, 235.0), rect), vec2(0.0, 0.0), "just inside the right margin");
-    let down = super::caret_follow_step(egui::pos2(300.0, 2000.0), rect);
+    assert_eq!(super::caret_follow_step(stroke(479.0, 235.0), rect), vec2(0.0, 0.0), "just inside the right margin");
+    let down = super::caret_follow_step(stroke(300.0, 2000.0), rect);
     assert!(down.x == 0.0 && down.y > 0.0 && down.y < 2000.0, "down and capped by the caret's position: {down:?}");
-    let up = super::caret_follow_step(egui::pos2(300.0, -500.0), rect);
-    assert_eq!(up, vec2(0.0, -570.0), "up: caret minus the top margin (50 + 20)");
+    let up = super::caret_follow_step(stroke(300.0, -500.0), rect);
+    assert_eq!(up, vec2(0.0, -580.0), "up: the stroke's top (−510) minus the top margin (70)");
+    // The whole stroke must come in, not just its centre: the near edge drives the step, so a
+    // centre-only rule would leave the far half clipped here.
+    let over_bottom = super::caret_follow_step(stroke(300.0, 355.0), rect);
+    assert_eq!(over_bottom, vec2(0.0, 35.0), "the stroke's bottom (365) clears the bottom margin (330)");
+    let top_out = super::caret_follow_step(stroke(300.0, 340.0), rect);
+    assert_eq!(top_out, vec2(0.0, 20.0), "the stroke's bottom (350) clears the bottom margin (330)");
+    // Empty edges (the layout can't be built): nothing.
+    assert_eq!(super::caret_follow_step(egui::Rect::NOTHING, rect), vec2(0.0, 0.0));
+    // A stroke taller than the margin box can't fully fit: the centre rule takes over, so it
+    // still gets brought in rather than sticking at an unreachable edge target.
+    let huge = egui::Rect::from_center_size(egui::pos2(300.0, 360.0), egui::vec2(1.0, 400.0));
+    assert_eq!(super::caret_follow_step(huge, rect), vec2(0.0, 30.0), "huge caret: centre (360) past the bottom margin (330)");
     // Hostile input never moves the camera.
-    for bad in [egui::pos2(f32::NAN, 200.0), egui::pos2(f32::INFINITY, 200.0)] {
+    for bad in [egui::Rect::from_center_size(egui::pos2(f32::NAN, 200.0), egui::vec2(1.0, 20.0)), egui::Rect::from_center_size(egui::pos2(f32::INFINITY, 200.0), egui::vec2(1.0, 20.0))] {
         assert_eq!(super::caret_follow_step(bad, rect), vec2(0.0, 0.0));
     }
-    assert_eq!(super::caret_follow_step(egui::pos2(0.0, 0.0), egui::Rect::NOTHING), vec2(0.0, 0.0));
-    assert_eq!(super::caret_follow_step(egui::pos2(0.0, 0.0), egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(30.0, 30.0))), vec2(0.0, 0.0), "narrower than the margin: no move");
+    assert_eq!(super::caret_follow_step(egui::Rect::NOTHING, egui::Rect::NOTHING), vec2(0.0, 0.0));
+    assert_eq!(super::caret_follow_step(egui::Rect::NOTHING, egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(30.0, 30.0))), vec2(0.0, 0.0), "narrower than the margin: no move");
 }
 
 // The canvas-following integration test lives in tests/type_caret_follow.rs: keyboard caret

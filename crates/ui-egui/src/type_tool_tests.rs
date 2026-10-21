@@ -2286,3 +2286,87 @@ fn justify_buttons_are_greyed_on_point_text() {
     h.run_steps(4);
     assert!(h.get_by_label("Justify all").accesskit_node().is_disabled(), "one of the formatted layers is point text");
 }
+
+fn caret_of(app: &PhotocraftApp) -> usize {
+    app.ui.text_edit.as_ref().map_or(0, |ed| ed.caret)
+}
+
+fn key_session(app: &mut PhotocraftApp, id: u64, caret: usize) {
+    app.ui.text_edit =
+        Some(crate::state::TextEdit { layer: id, caret, anchor: caret, session: "s".into(), created: false, mask: false, dragging: false, resize: None, preedit: None });
+}
+
+/// A keyboard-only harness: the events reach [`super::handle_keys`] with no canvas, like the
+/// focused-font-search regression above but feeding ordinary keys.
+fn keys_harness(app: PhotocraftApp) -> Harness<'static, PhotocraftApp> {
+    let mut h = Harness::builder().build_ui_state(
+        |ui, app: &mut PhotocraftApp| {
+            if ui.ctx().fonts(|f| f.families().contains(&egui::FontFamily::Name("medium".into()))) {
+                super::handle_keys(app, ui.ctx());
+            }
+        },
+        app,
+    );
+    PhotocraftApp::setup_context(&h.ctx, crate::theme::ThemeKind::ALL[0]);
+    h.run_steps(4);
+    h
+}
+
+/// ⌘Home / ⌘End go to the first / last character of the whole text (Photoshop's Ctrl+Home /
+/// Ctrl+End), while bare Home / End still stop at the line's edges; ⌘Delete removes to the end
+/// of the line, mirroring ⌘Backspace's removal to the line start.
+#[test]
+fn command_home_end_delete_cover_the_whole_text_and_line() {
+    let mut app = new_app();
+    let id = app.run("type.create", json!({"text": "One\nTwo", "size": 24})).unwrap()["layer"].as_u64().unwrap();
+    app.session.select_layer(LayerId(id)).unwrap();
+    key_session(&mut app, id, 5);
+    let mut h = keys_harness(app);
+    // "One\nTwo": 0 O, 1 n, 2 e, 3 \n, 4 T, 5 w, 6 o. Caret 5 sits on the second line.
+    assert_eq!(caret_of(h.state()), 5, "caret setup landed");
+    h.key_press_modifiers(Modifiers::COMMAND, egui::Key::Home);
+    h.run();
+    assert_eq!(caret_of(h.state()), 0, "⌘Home: the first character of the whole text");
+    h.key_press_modifiers(Modifiers::COMMAND, egui::Key::End);
+    h.run();
+    assert_eq!(caret_of(h.state()), 7, "⌘End: past the last character");
+    h.key_press(egui::Key::Home);
+    h.run();
+    assert_eq!(caret_of(h.state()), 4, "bare Home stops at the start of the line");
+    h.key_press_modifiers(Modifiers::COMMAND, egui::Key::Home);
+    h.run();
+    assert_eq!(caret_of(h.state()), 0);
+    h.key_press_modifiers(Modifiers::COMMAND, egui::Key::Delete);
+    h.run();
+    assert_eq!(super::current_text(h.state_mut(), LayerId(id)).as_deref(), Some("\nTwo"), "⌘Delete removed to the end of the line");
+}
+
+/// [`super::caret_follow_step`] is a lesser version of [`crate::canvas_autoscroll::edge_step`]:
+/// a caret inside the margin-free perimeter doesn't move the camera, one past it points the
+/// step toward it, and hostile input moves nothing.
+#[test]
+fn caret_follow_step_points_toward_the_caret_only_when_it_is_outside() {
+    let rect = egui::Rect::from_min_size(egui::pos2(100.0, 50.0), egui::vec2(400.0, 300.0));
+    assert_eq!(super::caret_follow_step(egui::pos2(300.0, 200.0), rect), vec2(0.0, 0.0), "inside: no move");
+    // Well inside the 20 pt margin nothing happens; deep inside but past the margin it starts.
+    assert_eq!(super::caret_follow_step(egui::pos2(121.0, 235.0), rect), vec2(0.0, 0.0), "the margin holds the caret");
+    assert_eq!(super::caret_follow_step(egui::pos2(119.5, 235.0), rect), vec2(-0.5, 0.0), "hair past the margin: a small step");
+    let left = super::caret_follow_step(egui::pos2(60.0, 235.0), rect);
+    assert_eq!(left, vec2(-60.0, 0.0), "past the left edge: toward the caret");
+    let right = super::caret_follow_step(egui::pos2(540.0, 235.0), rect);
+    assert_eq!(right, vec2(60.0, 0.0), "past the right edge: toward the caret");
+    assert_eq!(super::caret_follow_step(egui::pos2(479.0, 235.0), rect), vec2(0.0, 0.0), "just inside the right margin");
+    let down = super::caret_follow_step(egui::pos2(300.0, 2000.0), rect);
+    assert!(down.x == 0.0 && down.y > 0.0 && down.y < 2000.0, "down and capped by the caret's position: {down:?}");
+    let up = super::caret_follow_step(egui::pos2(300.0, -500.0), rect);
+    assert_eq!(up, vec2(0.0, -570.0), "up: caret minus the top margin (50 + 20)");
+    // Hostile input never moves the camera.
+    for bad in [egui::pos2(f32::NAN, 200.0), egui::pos2(f32::INFINITY, 200.0)] {
+        assert_eq!(super::caret_follow_step(bad, rect), vec2(0.0, 0.0));
+    }
+    assert_eq!(super::caret_follow_step(egui::pos2(0.0, 0.0), egui::Rect::NOTHING), vec2(0.0, 0.0));
+    assert_eq!(super::caret_follow_step(egui::pos2(0.0, 0.0), egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(30.0, 30.0))), vec2(0.0, 0.0), "narrower than the margin: no move");
+}
+
+// The canvas-following integration test lives in tests/type_caret_follow.rs: keyboard caret
+// steps offscreen scroll the view, and while the caret is back in view the camera stays put.

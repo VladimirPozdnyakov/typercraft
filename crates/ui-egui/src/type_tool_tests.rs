@@ -470,6 +470,73 @@ fn key(h: &mut Harness<'static, PhotocraftApp>, k: egui::Key) {
     h.run_steps(1);
 }
 
+/// Page Down/Up: the caret steps down/up over the lines that fit the canvas (at least one), the
+/// column stays put like with the arrows, ⇧ extends the selection, and ⌘/Ctrl+PageUp/Down passes
+/// to the menus (Photoshop's next/previous document), so the caret stays put for it too.
+#[test]
+fn page_keys_step_by_the_visible_lines() {
+    let mut app = new_app();
+    let text = "Lorem ipsum dolor sit amet.\n".repeat(40);
+    let id = app.run("type.create", json!({"text": text.clone(), "size": 24, "x": 200, "y": 200})).unwrap()["layer"].as_u64().unwrap();
+    app.session.select_layer(LayerId(id)).unwrap();
+    app.ui.text_edit = Some(crate::state::TextEdit {
+        layer: id,
+        caret: 0,
+        anchor: 0,
+        session: "s".into(),
+        created: false,
+        mask: false,
+        dragging: false,
+        resize: None,
+        preedit: None,
+    });
+    let mut h = harness(1.0, app);
+    h.run_steps(4);
+    let caret = |a: &PhotocraftApp| a.ui.text_edit.as_ref().map_or(0, |e| e.caret);
+    let anchor = |a: &PhotocraftApp| a.ui.text_edit.as_ref().map_or(0, |e| e.anchor);
+    assert_eq!(caret(h.state()), 0, "caret setup landed");
+    // Each line is 28 chars ("Lorem….\n" minus nothing else); one page of type is many lines.
+    h.key_press(egui::Key::PageDown);
+    h.run_steps(2);
+    let after = caret(h.state());
+    assert!(after >= 5 * 28, "page down stepped past several lines: {after}");
+    // Downs end at the text's end and stay there.
+    for _ in 0..6 {
+        h.key_press(egui::Key::PageDown);
+        h.run_steps(2);
+    }
+    assert_eq!(caret(h.state()), text.chars().count(), "the last page lands at the text end");
+    h.key_press(egui::Key::PageUp);
+    h.run_steps(2);
+    assert!(caret(h.state()) < text.chars().count(), "page up leaves the text end");
+    // ⌘A selected all; a plain Page Up moves off the selection, collapsing it.
+    h.key_press_modifiers(Modifiers::COMMAND, egui::Key::A);
+    h.run_steps(2);
+    h.key_press(egui::Key::PageUp);
+    h.run_steps(2);
+    assert_eq!(anchor(h.state()), caret(h.state()), "Page Up collapsed the selection");
+    // One page up from the text's end came back at least ten (~28-char) lines.
+    let up = 1120 - anchor(h.state());
+    assert!(up >= 10 * 28, "page up covered {up} chars of lines");
+    // ⇧ extends the anchored selection: the anchor stays at the caret the plain Page Up left.
+    let mid = anchor(h.state());
+    h.key_press_modifiers(Modifiers::SHIFT, egui::Key::PageUp);
+    h.run_steps(2);
+    assert_eq!(anchor(h.state()), mid, "⇧ keeps the anchor where the caret was");
+    assert!(caret(h.state()) < mid, "⇧ moved the caret above the anchor");
+    // A page covers at least ten lines: the window is far taller than ten (~29 px) lines.
+    let before = caret(h.state());
+    h.key_press_modifiers(Modifiers::SHIFT, egui::Key::PageDown);
+    h.run_steps(2);
+    assert!(caret(h.state()) >= before + 10 * 28, "⇧Page Down paged many lines: {before} → {}", caret(h.state()));
+    assert_eq!(anchor(h.state()), mid, "⇧ keeps the anchor");
+    // ⌘PageDown passes to the menus: the caret doesn't move.
+    let before = caret(h.state());
+    h.key_press_modifiers(Modifiers::COMMAND, egui::Key::PageDown);
+    h.run_steps(2);
+    assert_eq!(caret(h.state()), before, "⌘PageDown is not the type tool's");
+}
+
 /// Vertical type (#199): clicks and drags land on the glyph under the pointer down the column,
 /// and the arrow keys follow the vertical flow (↓ next character, ← next column).
 #[test]

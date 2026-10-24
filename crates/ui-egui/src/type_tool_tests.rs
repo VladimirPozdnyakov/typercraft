@@ -2903,6 +2903,59 @@ fn caret_follow_step_points_toward_the_caret_only_when_it_is_outside() {
 
 // The canvas-following integration test lives in tests/type_caret_follow.rs: keyboard caret
 // steps offscreen scroll the view, and while the caret is back in view the camera stays put.
+
+/// Type on a path bends the caret: [`super::caret_screen`] must map the stroke through the
+/// same warp [`super::draw_overlay`] paints with, or the camera chases the unwarped line's
+/// place while the visible caret sits on the curve. The rect equals the drawn stroke's box.
+#[test]
+fn the_caret_rect_follows_the_path_warp() {
+    let mut app = new_app();
+    let v = app.run("type.create", json!({"text": "Bendy type on a path", "size": 24})).unwrap();
+    let id = LayerId(v["layer"].as_u64().unwrap());
+    // A zig-zag path: far enough between the anchors that an unwarped caret stroke lands far
+    // from where the bent glyphs (and their caret) draw.
+    std::sync::Arc::make_mut(&mut app.session.active_mut().unwrap().doc).work_path =
+        Some(photocraft_doc::Path::new(vec![photocraft_doc::Subpath::polygon(&[(100.0, 400.0), (200.0, 80.0), (300.0, 400.0), (400.0, 80.0)])]));
+    app.run("type.attachToPath", json!({"layer": id.0})).unwrap();
+    app.session.select_layer(id).unwrap();
+    key_session(&mut app, id.0, 0);
+    // Draw with the caret solid (dragging skips the blink phase) and take the rect it paints.
+    if let Some(ed) = app.ui.text_edit.as_mut() {
+        ed.dragging = true;
+    }
+    let xf = ViewXform {
+        rect: egui::Rect::from_min_size(Pos2::ZERO, vec2(600.0, 500.0)),
+        zoom: 1.0,
+        center: [250.0, 250.0],
+        flip: false,
+        rotation: 0.0,
+        aspect: 1.0,
+    };
+    let xf = std::rc::Rc::new(xf);
+    let xf2 = xf.clone();
+    let mut h =
+        Harness::builder().with_size(vec2(600.0, 500.0)).build_ui_state(move |ui, app: &mut PhotocraftApp| super::draw_overlay(app, ui.painter(), &xf2), app);
+    PhotocraftApp::setup_context(&h.ctx, crate::theme::ThemeKind::ALL[0]);
+    h.run();
+    let drawn: Vec<(Pos2, Pos2)> = h
+        .output()
+        .shapes
+        .iter()
+        .filter_map(|s| match &s.shape {
+            egui::Shape::LineSegment { points: [a, b], stroke } if *stroke == super::CARET_STROKES[0] || *stroke == super::CARET_STROKES[1] => Some((*a, *b)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(drawn.len(), 2, "the caret's halo and line: {drawn:?}");
+    let (mut lo, mut hi) = (drawn[0].0, drawn[0].1);
+    for &(a, b) in drawn.iter() {
+        lo = lo.min(a).min(b);
+        hi = hi.max(a).max(b);
+    }
+    let got = super::caret_screen(h.state_mut(), &xf).expect("a caret stroke rect");
+    assert!((got.min.x - lo.x).abs() < 0.5 && (got.max.x - hi.x).abs() < 0.5, "x follows the drawn stroke: {got:?} vs [{lo:?}..{hi:?}]");
+    assert!((got.min.y - lo.y).abs() < 0.5 && (got.max.y - hi.y).abs() < 0.5, "y follows the drawn stroke: {got:?} vs [{lo:?}..{hi:?}]");
+}
 fn ellipse_layer(app: &mut PhotocraftApp) -> u64 {
     app.run("shape.create", json!({"kind": "ellipse", "rect": [200, 200, 400, 300], "fill": "#dddddd"})).unwrap()["layer"].as_u64().unwrap()
 }

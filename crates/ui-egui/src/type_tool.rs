@@ -985,17 +985,26 @@ fn line_edge(app: &mut PhotocraftApp, id: LayerId, caret: usize, end: bool) -> u
 /// the caller pleases.
 pub(crate) fn caret_screen(app: &mut PhotocraftApp, xf: &ViewXform) -> Option<egui::Rect> {
     let ed = app.ui.text_edit.as_ref()?.clone();
-    let (l, aff, text) = layout(app, LayerId(ed.layer))?;
+    let id = LayerId(ed.layer);
+    let (l, aff, text) = layout(app, id)?;
     let (x, top, bot) = if l.lines.is_empty() { (0.0, -(12.0 * l.px_per_pt.max(1.0)), 3.0) } else { l.caret(byte_of(&text, ed.caret)) };
-    let scr_y = |v: f32| {
-        let (tx, ty) = l.to_text(x, v);
-        let p = aff.apply(Point::new(f64::from(tx), f64::from(ty)));
-        xf.to_screen(p.x as f32, p.y as f32).y
+    // Type on a path bends the caret exactly as [`draw_overlay`] paints it — a straight stroke
+    // between the warped endpoints, the IME rect likewise — so following chases the drawn
+    // caret, not the unwarped line position.
+    let bend =
+        app.session.active().and_then(|s| text_layer(&s.doc, id).map(|t| t.shape.clone())).and_then(|shape| photocraft_text::warp::Warp::on_path(&shape));
+    let scr = |y: f32| -> Pos2 {
+        let (tx, ty) = l.to_text(x, y);
+        let p = match &bend {
+            Some(w) => {
+                let (x, y) = w.apply(f64::from(tx), f64::from(ty));
+                aff.apply(Point::new(x, y))
+            }
+            None => aff.apply(Point::new(f64::from(tx), f64::from(ty))),
+        };
+        xf.to_screen(p.x as f32, p.y as f32)
     };
-    let (tx, ty) = l.to_text(x, (top + bot) / 2.0);
-    let m = aff.apply(Point::new(f64::from(tx), f64::from(ty)));
-    let cx = xf.to_screen(m.x as f32, m.y as f32).x;
-    Some(egui::Rect::from_two_pos(egui::pos2(cx, scr_y(top)), egui::pos2(cx, scr_y(bot))))
+    Some(egui::Rect::from_two_pos(scr(top), scr(bot)))
 }
 
 /// Where to scroll this frame so a caret stroke at screen rect `caret` comes back into the

@@ -70,6 +70,7 @@ fn setup(h: &mut Harness) -> u64 {
         // The inline edit session: caret at the text's head, like a keyboard session.
         app.ui.text_edit = Some(photocraft_ui_egui::state::TextEdit {
             layer: id,
+            document: None,
             caret: 0,
             anchor: 0,
             session: "s".into(),

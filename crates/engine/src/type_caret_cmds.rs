@@ -199,18 +199,14 @@ fn navigate(s: &Session, p: &Value) -> Result<Value> {
             }
             start
         }
-        "paragraphEnd" => frame
-            .text
-            .chars()
-            .enumerate()
-            .skip(index)
-            .take_while(|(_, c)| *c != '\n')
-            .count()
-            + index,
+        "paragraphEnd" => frame.text.chars().enumerate().skip(index).take_while(|(_, c)| *c != '\n').count() + index,
         "start" => 0,
         "end" => frame.text.chars().count(),
         other => {
-            return Err(bad(CMD, format!("move {other:?} must be wordPrev, wordNext, linePrev, lineNext, lineStart, lineEnd, paragraphStart, paragraphEnd, start or end")));
+            return Err(bad(
+                CMD,
+                format!("move {other:?} must be wordPrev, wordNext, linePrev, lineNext, lineStart, lineEnd, paragraphStart, paragraphEnd, start or end"),
+            ));
         }
     };
     Ok(json!({ "index": next }))

@@ -821,6 +821,7 @@ fn page_keys_step_by_the_visible_lines() {
     app.session.select_layer(LayerId(id)).unwrap();
     app.ui.text_edit = Some(crate::state::TextEdit {
         layer: id,
+        document: None,
         caret: 0,
         anchor: 0,
         session: "s".into(),
@@ -885,15 +886,25 @@ fn vertical_page_columns_count_the_visible_columns() {
     let mut app = new_app();
     let text = "ab\ncd\nef\ngh\nij\nkl";
     let id = LayerId(
-        app.run("type.create", json!({"text": text, "size": 40, "leading": 300, "x": 600, "y": 100, "orientation": "vertical"}))
-            .unwrap()["layer"]
+        app.run("type.create", json!({"text": text, "size": 40, "leading": 300, "x": 600, "y": 100, "orientation": "vertical"})).unwrap()["layer"]
             .as_u64()
             .unwrap(),
     );
     app.session.select_layer(id).unwrap();
     app.ui.views[0].zoom = 1.0;
     app.ui.views[0].center = [300.0, 450.0];
-    app.ui.text_edit = Some(crate::state::TextEdit { layer: id.0, caret: 0, anchor: 0, session: "s".into(), created: false, mask: false, dragging: false, resize: None, preedit: None });
+    app.ui.text_edit = Some(crate::state::TextEdit {
+        layer: id.0,
+        document: None,
+        caret: 0,
+        anchor: 0,
+        session: "s".into(),
+        created: false,
+        mask: false,
+        dragging: false,
+        resize: None,
+        preedit: None,
+    });
     let mut h = harness(1.0, app);
     h.run_steps(4);
     let caret = |a: &PhotocraftApp| a.ui.text_edit.as_ref().map_or(0, |e| e.caret);

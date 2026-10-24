@@ -308,6 +308,9 @@ pub(crate) fn inside_box(app: &mut PhotocraftApp, id: LayerId, x: f64, y: f64) -
 
 /// Pointer down with the Type tool. Returns true when the press was consumed (no box drag).
 pub fn pointer_down(app: &mut PhotocraftApp, x: f64, y: f64, mods: egui::Modifiers) -> bool {
+    // A click this frame must not reuse the keyboard's follow request, whatever pointer
+    // placement ends up doing here: clicks never pull the camera toward the caret they place.
+    app.ui.type_caret_moved = false;
     if let Some(ed) = app.ui.text_edit.clone() {
         let id = LayerId(ed.layer);
         if let Some(i) = box_handle_at(app, id, x, y) {

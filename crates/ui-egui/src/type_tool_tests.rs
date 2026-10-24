@@ -2904,6 +2904,40 @@ fn caret_follow_step_points_toward_the_caret_only_when_it_is_outside() {
 // The canvas-following integration test lives in tests/type_caret_follow.rs: keyboard caret
 // steps offscreen scroll the view, and while the caret is back in view the camera stays put.
 
+/// A same-frame pair of an arrow key and a pointer press: the key asked the canvas to follow
+/// the caret, but a click that lands in the text also moves the caret before the canvas
+/// consumes the flag, and the camera must not scroll toward a caret a click just placed
+/// (clicks never pull the camera). The press kills the pending follow request.
+#[test]
+fn a_pointer_press_kills_a_pending_keyboard_follow() {
+    let mut app = new_app();
+    let v = app.run("type.create", json!({"text": "Click beats the arrow", "size": 24})).unwrap();
+    let id = LayerId(v["layer"].as_u64().unwrap());
+    app.session.select_layer(id).unwrap();
+    key_session(&mut app, id.0, 0);
+    let ctx = egui::Context::default();
+    let mut moved = false;
+    let mut out = ctx.run_ui(
+        egui::RawInput {
+            time: Some(1.0),
+            events: vec![egui::Event::Key { key: egui::Key::ArrowDown, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::NONE }],
+            ..Default::default()
+        },
+        |_ui| moved = super::handle_keys(&mut app, &ctx),
+    );
+    out.textures_delta.clear();
+    assert!(moved, "the arrow key was the type session's");
+    assert!(app.ui.type_caret_moved, "the keyboard step asked the canvas to follow");
+    // The same frame's press lands on the glyphs: placement wins, the follow request dies.
+    let (l, aff, _) = super::layout(&mut app, id).expect("layout");
+    let (x, top, bot) = l.caret(0);
+    let (tx, ty) = l.to_text(x, (top + bot) / 2.0);
+    let p = aff.apply(Point::new(f64::from(tx), f64::from(ty)));
+    let hit = super::pointer_down(&mut app, p.x, p.y, egui::Modifiers::NONE);
+    assert!(hit, "the press hit the text");
+    assert!(!app.ui.type_caret_moved, "the click cancelled the keyboard's follow request");
+}
+
 /// Type on a path bends the caret: [`super::caret_screen`] must map the stroke through the
 /// same warp [`super::draw_overlay`] paints with, or the camera chases the unwarped line's
 /// place while the visible caret sits on the curve. The rect equals the drawn stroke's box.

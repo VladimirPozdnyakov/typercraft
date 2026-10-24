@@ -14,16 +14,23 @@ use serde_json::{Value, json};
 type Harness = egui_kittest::Harness<'static, PhotocraftApp>;
 
 fn harness() -> Option<Harness> {
-    // The adapter probe is the only step that can fail for lack of a GPU; after it a panic is a
-    // real failure and must fail the test, not read as a skip.
-    let probed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        egui_kittest::wgpu::create_render_state(photocraft_ui_egui::gpu_canvas::wgpu_setup(), Default::default())
-    }))
-    .ok();
-    let Some(rs) = probed else {
+    use eframe::egui_wgpu::WgpuSetup;
+    use eframe::wgpu;
+    // Skip only when the machine has no adapter at all: enumerate the adapters the configured
+    // setup would consider, and only then let kittest's render-state creation run uncaught — a
+    // real device failure fails the test instead of posing as a headless machine (kittest turns
+    // it into a panic).
+    let setup = photocraft_ui_egui::gpu_canvas::wgpu_setup();
+    let backends = match &setup {
+        WgpuSetup::CreateNew(create) => create.instance_descriptor.backends,
+        WgpuSetup::Existing(_) => wgpu::Backends::all(),
+    };
+    let instance = pollster::block_on(setup.new_instance());
+    if pollster::block_on(instance.enumerate_adapters(backends)).is_empty() {
         eprintln!("skipping: no GPU adapter");
         return None;
-    };
+    }
+    let rs = egui_kittest::wgpu::create_render_state(setup, Default::default());
     Some(
         egui_kittest::Harness::builder()
             .with_size(egui::vec2(900.0, 640.0))

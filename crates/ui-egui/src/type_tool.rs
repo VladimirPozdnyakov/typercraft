@@ -985,23 +985,15 @@ fn line_edge(app: &mut PhotocraftApp, id: LayerId, caret: usize, end: bool) -> u
 /// pages farther. The screen edges go through the view transform and the layer's transform, so
 /// rotations, flips, pan and zoom all count the lines the user actually sees. Hostile or
 /// missing view state and empty layouts hold the caret.
-fn page_step(app: &mut PhotocraftApp, id: LayerId, ctx: &egui::Context, caret: usize, down: bool) -> usize {
+fn page_step(app: &mut PhotocraftApp, id: LayerId, caret: usize, down: bool) -> usize {
     let Some((l, aff, text)) = layout(app, id) else { return caret };
-    let Some(view) = app.session.active_index().and_then(|i| app.ui.views.get(i)).cloned() else { return caret };
-    let rect = app.last_canvas_rect;
+    // The displayed canvas, as everything else maps it: rulers shrink it, an animated zoom shows
+    // its in-between camera, and pixel alignment holds. Paging counts the lines the user sees.
+    let Some(xf) = crate::canvas::ViewXform::active(app) else { return caret };
+    let rect = xf.rect;
     if !rect.is_finite() || rect.width() <= 0.0 || rect.height() <= 0.0 || l.lines.is_empty() {
         return caret;
     }
-    let ppp = ctx.pixels_per_point();
-    let ppp = if ppp.is_finite() && ppp > 0.0 { ppp } else { 1.0 };
-    let xf = crate::canvas::ViewXform {
-        rect,
-        zoom: view.zoom / ppp,
-        center: view.center,
-        flip: app.ui.view.flip_horizontal,
-        rotation: view.rotation,
-        aspect: app.ui.view.display_aspect(),
-    };
     let text_cross = |p: Pos2| {
         let d = xf.to_doc(p);
         to_text(&aff, d[0], d[1])
@@ -1180,7 +1172,7 @@ pub fn handle_keys(app: &mut PhotocraftApp, ctx: &egui::Context) -> bool {
                     // Page Down/Up: one screen of lines down/up, keeping the column. ⌘/Ctrl+
                     // PageUp/PageDown passes to the menus (Photoshop's next/previous document).
                     Key::PageUp | Key::PageDown if !m.command => {
-                        let to = page_step(app, id, ctx, ed.caret, *key == Key::PageDown);
+                        let to = page_step(app, id, ed.caret, *key == Key::PageDown);
                         set(app, to, m.shift);
                     }
                     Key::Enter if m.command => commit_with(app, *m),

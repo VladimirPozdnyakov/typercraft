@@ -74,7 +74,15 @@ fn every_subcommand_answers_help() {
         }
     }
     // Help where a flag's value should be is still help, not a missing value or a file named `-h`.
-    for args in [&["run", "x.png", "--out", "--help"][..], &["commands", "--filter", "-h"], &["mcp", "--bridge", "-h"], &["serve", "--port", "--help"]] {
+    // So is help after another mistake.
+    for args in [
+        &["run", "x.png", "--out", "--help"][..],
+        &["commands", "--filter", "-h"],
+        &["mcp", "--bridge", "-h"],
+        &["serve", "--port", "--help"],
+        &["mcp", "stray.psd", "--help"],
+        &["serve", "--port", "abc", "--port", "1", "-h"],
+    ] {
         let o = bin().current_dir(&d).args(args).stdin(Stdio::null()).output().unwrap();
         assert_eq!(o.status.code(), Some(0), "{args:?}: {}", String::from_utf8_lossy(&o.stderr));
         assert!(String::from_utf8_lossy(&o.stdout).contains(&format!("photocraft-cli {}", args[0])), "{args:?}");
@@ -161,14 +169,14 @@ fn server_modes_reject_ignored_or_conflicting_options() {
         }
         for flag in ["--automation-read-root", "--automation-write-root"] {
             server_usage_error(&[sub, flag, ".", flag, "."], "cannot be used multiple times");
-            server_usage_error(&[sub, &format!("{flag}=")], &format!("'{flag} "));
+            server_usage_error(&[sub, &format!("{flag}=")], &format!("a value is required for '{flag} "));
             server_usage_error(&[sub, flag, "--automation-write-root", "."], &format!("a value is required for '{flag} "));
         }
         let transport = if sub == "mcp" { "--bridge" } else { "--port" };
         for flag in [transport, "--control-token", "--control-token-file"] {
             // Valid values, so the repeat is what is refused (a transport value is parsed first).
             server_usage_error(&[sub, flag, "7878", &format!("{flag}=7879")], "cannot be used multiple times");
-            server_usage_error(&[sub, flag, ""], &format!("'{flag} "));
+            server_usage_error(&[sub, flag, ""], &format!("for '{flag} "));
         }
         server_usage_error(&[sub, transport, "7878", "--control-token", "unused", "--control-token-file", "unused"], "cannot be used with");
     }

@@ -11,11 +11,18 @@ use crate::widgets::{ButtonRole, DialogButton, dialog_buttons};
 /// [`show`] takes it out again and opens the matching file or folder dialog.
 pub(crate) const BROWSE_FIELD: &str = "__browse";
 
-/// Browse… beside a path field of dialog `id`: a folder picker for `dir` fields, a `.wasm` picker
-/// for Install Plug-in…'s `path`. The answer fills the field.
+/// A text field that names a folder: an export's `dir`, and the source (`input`) and destination
+/// (`output`) folders of Image Processor, Batch, Lens Correction, Contact Sheet and Create
+/// Droplet, which Photoshop picks with Select Folder… / Choose… (#9357).
+pub(crate) fn is_folder_field(key: &str) -> bool {
+    matches!(key, "dir" | "input" | "output")
+}
+
+/// Browse… beside a path field of dialog `id`: a folder picker for folder fields
+/// ([`is_folder_field`]), a `.wasm` picker for Install Plug-in…'s `path`. The answer fills the field.
 fn browse_field(app: &mut PhotocraftApp, id: u64, fields: &serde_json::Map<String, Value>, key: &str) {
     let key = key.to_string();
-    let r = if key == "dir" {
+    let r = if is_folder_field(&key) {
         app.ask_folder(move |app, path| fill_field(app, id, &key, path))
     } else if fields.get("__command").and_then(Value::as_str) == Some("plugin.install") {
         let initial_dir = crate::file_dialog::last_used_dir(&app.ui.recent_files);

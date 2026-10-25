@@ -1170,8 +1170,8 @@ pub fn form_body(ui: &mut egui::Ui, f: &mut Map<String, Value>) {
                         None => {
                             ui.horizontal(|ui| {
                                 ui.add(egui::TextEdit::singleline(&mut s).desired_width(260.0));
-                                // A folder field gets the system folder picker (#7942).
-                                if k == "dir" && crate::widgets::secondary_button(ui, tl!("Browse…"), 0.0).clicked() {
+                                // A folder field gets the system folder picker (#7942, #9357).
+                                if crate::dialogs::is_folder_field(&k) && crate::widgets::secondary_button(ui, tl!("Browse…"), 0.0).clicked() {
                                     browse = Some(k.clone());
                                 }
                             });

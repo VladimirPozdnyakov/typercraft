@@ -699,6 +699,11 @@ pub fn body(app: &mut crate::PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<Strin
                     }
                 }
             });
+            // Under Orientation, as in Photoshop: the document starts as one artboard (#9086).
+            let mut artboard = f.get("artboard").and_then(Value::as_bool).unwrap_or(false);
+            if widgets::checkbox(ui, &mut artboard, tl!("Artboards")).changed() {
+                f.insert("artboard".into(), json!(artboard));
+            }
             ui.add_space(4.0);
             small_label(ui, tl!("Resolution"));
             ui.horizontal(|ui| {
@@ -879,6 +884,21 @@ mod tests {
         assert!(s.execute("file.new", command_params(&f)).is_ok());
         apply_saved_preset(&mut f, &s.presets.documents[1]);
         assert_eq!(f["profile"], "coated-cmyk");
+    }
+
+    /// #9086: the Artboards checkbox's field reaches `file.new`, which starts the document as one
+    /// artboard; the dialog's own `__` keys don't.
+    #[test]
+    fn the_artboards_box_creates_an_artboard_document() {
+        let mut s = photocraft_engine::Session::new();
+        let mut f = Map::new();
+        for (k, v) in [("width", json!(64)), ("height", json!(48)), ("artboard", json!(true)), ("__orientation", json!("landscape"))] {
+            f.insert(k.into(), v);
+        }
+        s.execute("file.new", command_params(&f)).unwrap();
+        let doc = &s.active().unwrap().doc;
+        assert_eq!(doc.artboards().len(), 1);
+        assert_eq!(doc.artboards()[0].2.rect, doc.bounds());
     }
 
     #[test]

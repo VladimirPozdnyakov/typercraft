@@ -1000,8 +1000,10 @@ fn hue_saturation(ui: &mut egui::Ui, v: &mut Value, cx: &EditorCx) -> Edit {
     }
     // Spectrum bars: input hues above, adjusted below; the selected range's sliders between.
     ui.add_space(6.0);
-    let w = ui.available_width().min(300.0);
+    // As wide as the sliders above, whatever the panel's width (#9242).
+    let w = ui.available_width();
     let (bars, bresp) = ui.allocate_exact_size(vec2(w, 40.0), Sense::click_and_drag());
+    ui.data_mut(|d| d.insert_temp(cx.mem.with("hs-bars"), bars));
     let top = Rect::from_min_size(bars.min, vec2(w, 10.0));
     let bottom = Rect::from_min_size(pos2(bars.left(), bars.bottom() - 10.0), vec2(w, 10.0));
     let p = ui.painter_at(bars.expand(4.0));

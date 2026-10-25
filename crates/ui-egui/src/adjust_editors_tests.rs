@@ -807,6 +807,37 @@ fn editor_harness(kind: &'static str, params: serde_json::Value) -> Harness<'sta
     h
 }
 
+/// #9242: the Hue/Saturation spectrum bars stretch with the panel, like the sliders above them.
+#[test]
+fn hue_saturation_bars_fill_the_panel_width() {
+    use crate::adjust_editors::{EditorCx, editor};
+    for width in [300.0, 600.0] {
+        let mut h = Harness::builder().with_size(vec2(width, 500.0)).build_ui_state(
+            |ui, values: &mut serde_json::Value| {
+                let cx = EditorCx {
+                    mem: egui::Id::new("hs"),
+                    hist: None,
+                    gray: false,
+                    swatches: [[0.0; 3], [1.0; 3]],
+                    gradients: Vec::new(),
+                    dialog: false,
+                    dynamic_color_sliders: true,
+                    isolated_curve: None,
+                };
+                let avail = ui.available_width();
+                editor(ui, "hueSaturation", values, &cx);
+                ui.data_mut(|d| d.insert_temp(egui::Id::new("hs-avail"), avail));
+            },
+            json!({}),
+        );
+        PhotocraftApp::setup_context(&h.ctx, Default::default());
+        h.run_steps(4);
+        let bars = h.ctx.data(|d| d.get_temp::<Rect>(egui::Id::new("hs").with("hs-bars"))).expect("bars drawn");
+        let avail = h.ctx.data(|d| d.get_temp::<f32>(egui::Id::new("hs-avail"))).unwrap();
+        assert!((bars.width() - avail).abs() < 0.5, "{width}: bars {} of {avail}", bars.width());
+    }
+}
+
 /// Types `text` into the `index`th number field and commits it with Enter.
 fn type_into_field(h: &mut Harness<'static, serde_json::Value>, index: usize, text: &str) {
     h.query_all_by_role(egui::accesskit::Role::SpinButton).nth(index).unwrap().click();
